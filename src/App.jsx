@@ -23,8 +23,8 @@ if (typeof window !== "undefined" && !window.storage) {
    Tant que c'est vide, l'app marche en LOCAL (ce téléphone).
    Une fois rempli + lib chargée, tout passe en CLOUD (partagé).
    ============================================================ */
-const SUPABASE_URL = "";   // ex: https://xxxx.supabase.co
-const SUPABASE_KEY = "";   // clé "anon public"
+const SUPABASE_URL = "https://eamxekdxzrdvntphoerj.supabase.co";   // ex: https://xxxx.supabase.co
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhbXhla2R4enJkdm50cGhvZXJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NjM5OTEsImV4cCI6MjA5ODMzOTk5MX0.y8zEKUrzDxEUqRQ5vW6EpDXUHWWBK0eKzcsNCvJqdeY";   // clé "anon public"
 
 /* ===== Brand ===== */
 const C = {
