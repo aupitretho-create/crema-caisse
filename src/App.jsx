@@ -4,7 +4,7 @@ import {
   IceCream, GlassWater, Cookie, Coffee, Star, Trash2, ArrowLeft, Delete, Plus, Minus, Settings,
   CreditCard, Banknote, Wallet, Check, RotateCcw, BarChart3, Store, ChevronLeft, ChevronRight,
   Undo2, UserRound, LogOut, Receipt, Target, Cloud, Camera, Pencil, X, Package, AlertTriangle,
-  Tag, TrendingUp, ClipboardList, Copy, Heart, Search, Phone, Gift, Stamp
+  Tag, TrendingUp, ClipboardList, Copy, Heart, Search, Phone, Gift, Stamp, Sparkles, Ticket
 } from "lucide-react";
 
 /* ---- Stockage navigateur (localStorage) : utilisé quand Supabase n'est pas configuré ---- */
@@ -36,6 +36,20 @@ const SALES_KEY = "crema:sales:v3";
 const CONF_KEY = "crema:config:v4";
 const STOCK_KEY = "crema:stock:v1";
 const FID_KEY = "crema:fid:v1";
+const CODE_PREFIX = "code:";
+const codeChars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // sans I,O,0,1,L
+const genCode = () => "CR-" + Array.from({ length: 4 }, () => codeChars[Math.floor(Math.random() * codeChars.length)]).join("");
+// kind: 'euro' (-Xe) | 'percent' (-X%) | 'replay' (rejoue) | 'none' (perdu)
+const DEF_WHEEL = [
+  { label: "1 boule offerte", kind: "euro", value: 3, color: "#F05C8A" },
+  { label: "-20%", kind: "percent", value: 20, color: "#7FA66A" },
+  { label: "Topping offert", kind: "euro", value: 0.5, color: "#EBCB6B" },
+  { label: "-10%", kind: "percent", value: 10, color: "#B7773C" },
+  { label: "Milkshake -2€", kind: "euro", value: 2, color: "#d63a63" },
+  { label: "Café Dubaï -1€", kind: "euro", value: 1, color: "#6b4a2f" },
+  { label: "Rejoue 🎉", kind: "replay", value: 0, color: "#FFD93D" },
+  { label: "Dommage 😅", kind: "none", value: 0, color: "#CFC2A6" },
+];
 const PALETTE = ["#EBCB6B", "#F05C8A", "#7FA66A", "#5a3a24", "#B7773C", "#D6A86A", "#d63a63", "#f6a93b", "#E9C93B", "#7a5b9a", "#BFC7B8", "#c98a4a", "#6b4a2f", "#E0AE1E", "#f3c9cf", "#CFC2A6"];
 const pad = (n) => String(n).padStart(2, "0");
 const localISO = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -80,6 +94,18 @@ const DB = {
     if (i >= 0) list[i] = client; else list.unshift(client);
     await this.save(FID_KEY, list);
     return client;
+  },
+  // ---- codes cadeaux (roue) : 1 clé kv par code ----
+  async codeGet(code) {
+    const key = CODE_PREFIX + code;
+    if (sb) { try { const { data } = await sb.from("kv").select("value").eq("key", key).maybeSingle(); return data ? data.value : null; } catch (e) {} }
+    return await this.load(key);
+  },
+  async codeSave(obj) { return await this.save(CODE_PREFIX + obj.code, obj); },
+  async codesAll() {
+    if (sb) { try { const { data } = await sb.from("kv").select("*").like("key", CODE_PREFIX + "%"); return (data || []).map((r) => r.value).filter(Boolean); } catch (e) {} }
+    try { if (typeof window !== "undefined" && window.storage) { const { keys } = await window.storage.list(CODE_PREFIX); const out = []; for (const k of keys) { const r = await window.storage.get(k); if (r && r.value) out.push(JSON.parse(r.value)); } return out; } } catch (e) {}
+    return [];
   },
 };
 
@@ -145,13 +171,13 @@ export default function CremaCaisse() {
   const [loaded, setLoaded] = useState(false);
   const [cloud, setCloud] = useState("local");
   const [toast, setToast] = useState(null);
-  const [config, setConfigState] = useState({ prices: {}, parfums: DEF_PARFUMS, toppings: DEF_TOPPINGS, goal: 300, sellers: DEF_SELLERS, costs: DEF_COSTS });
+  const [config, setConfigState] = useState({ prices: {}, parfums: DEF_PARFUMS, toppings: DEF_TOPPINGS, goal: 300, sellers: DEF_SELLERS, costs: DEF_COSTS, wheel: DEF_WHEEL });
   const [stock, setStockState] = useState({ consum: DEF_CONSUM, boules: {} });
 
   useEffect(() => {
     (async () => {
       const s = await DB.load(SALES_KEY); if (s) setSales(s);
-      const c = await DB.load(CONF_KEY); if (c) setConfigState({ prices: c.prices || {}, parfums: c.parfums || DEF_PARFUMS, toppings: c.toppings || DEF_TOPPINGS, goal: c.goal ?? 300, sellers: c.sellers || DEF_SELLERS, costs: { ...DEF_COSTS, ...(c.costs || {}) } });
+      const c = await DB.load(CONF_KEY); if (c) setConfigState({ prices: c.prices || {}, parfums: c.parfums || DEF_PARFUMS, toppings: c.toppings || DEF_TOPPINGS, goal: c.goal ?? 300, sellers: c.sellers || DEF_SELLERS, costs: { ...DEF_COSTS, ...(c.costs || {}) }, wheel: c.wheel || DEF_WHEEL });
       const st = await DB.load(STOCK_KEY); if (st) setStockState({ consum: st.consum || DEF_CONSUM, boules: st.boules || {} });
       const cl = await DB.clientsAll(); setClients(cl);
       setLoaded(true);
@@ -182,11 +208,12 @@ export default function CremaCaisse() {
       lines.forEach((l) => { if ((l.scoops || 0) > 0 && l.flavors) l.flavors.forEach((f) => { boules[f] = Math.max(0, (boules[f] ?? 0) + dir * 1); }); if (l.contenant === "Pot") { dec("pot", 1); dec("cuillere", 1); dec("serviette", 1); } else if (l.contenant === "Cornet") { dec("cornet", 1); dec("serviette", 1); } if (l.dubai) { dec("gobelet", 1); dec("coquedubai", 1); dec("cuillere", 1); dec("serviette", 1); } else if (l.drink) { dec("gobelet", 1); dec("paille", 1); } if (l.cat === "GAUFRES") dec("serviette", 1); });
       return { consum, boules }; });
   };
-  const checkout = async (method, remise = 0) => {
+  const checkout = async (method, remise = 0, usedCode = null) => {
     const total = Math.max(0, subtotal - remise);
     const cost = cart.reduce((s, l) => s + lineCost(l, config.costs), 0);
     const gained = cartTampons(cart);
-    const sale = { id: "T" + Date.now(), ts: Date.now(), seller: seller?.id, sellerName: seller?.name, items: cart.map((l) => ({ cat: l.cat, label: l.label, price: l.price, scoops: l.scoops || 0, flavors: l.flavors || [], contenant: l.contenant, nappage: l.nappage, topping: l.topping, drink: l.drink, dubai: l.dubai })), subtotal, remise, total, cost, method, scoops: cart.reduce((s, l) => s + (l.scoops || 0), 0), clientId: fidClient?.id, tampons: gained };
+    const sale = { id: "T" + Date.now(), ts: Date.now(), seller: seller?.id, sellerName: seller?.name, items: cart.map((l) => ({ cat: l.cat, label: l.label, price: l.price, scoops: l.scoops || 0, flavors: l.flavors || [], contenant: l.contenant, nappage: l.nappage, topping: l.topping, drink: l.drink, dubai: l.dubai })), subtotal, remise, total, cost, method, scoops: cart.reduce((s, l) => s + (l.scoops || 0), 0), clientId: fidClient?.id, tampons: gained, code: usedCode?.code || null };
+    if (usedCode) { try { await DB.codeSave({ ...usedCode, used: true, usedAt: Date.now() }); } catch (e) {} }
     applyStock(cart, -1); persistSales([sale, ...sales]);
     if (fidClient && gained > 0) { const c = { ...fidClient, tampons: (fidClient.tampons || 0) + gained, visites: (fidClient.visites || 0) + 1, updated: Date.now() }; await saveClient(c); flash(`Encaissé · ${eur(total)} · +${gained} 🎟️ (${c.tampons})`); }
     else flash("Encaissé · " + eur(total));
@@ -215,6 +242,7 @@ export default function CremaCaisse() {
         <div className="flex gap-1.5">
           <Tab on={view === "caisse"} onClick={() => setView("caisse")} icon={Store} label="Caisse" />
           <Tab on={view === "fidelite"} onClick={() => setView("fidelite")} icon={Heart} label="Fidélité" />
+          <Tab on={view === "roue"} onClick={() => setView("roue")} icon={Gift} label="Cadeaux" />
           <Tab on={view === "stock"} onClick={() => setView("stock")} icon={Package} label="Stock" badge={lowStock} />
           <Tab on={view === "stats"} onClick={() => setView("stats")} icon={BarChart3} label="Stats" />
           <Tab on={view === "reglages"} onClick={() => setView("reglages")} icon={Settings} label="Réglages" />
@@ -223,12 +251,13 @@ export default function CremaCaisse() {
 
       {view === "caisse" && <Caisse {...{ menu, cat, setCat, pick, cart, removeLine, total: subtotal, setPay, setCart, fcolor, caToday, goal: config.goal, onTicket: () => setTicket({ items: cart, total: subtotal }), fidClient, onFid: () => setFidOpen(true), onFidClear: () => setFidClient(null) }} />}
       {view === "fidelite" && <Fidelite clients={clients} saveClient={saveClient} flash={flash} />}
+      {view === "roue" && <Roue wheel={config.wheel} flash={flash} />}
       {view === "stock" && <StockView stock={stock} setStock={setStock} parfums={config.parfums} fcolor={fcolor} />}
       {view === "stats" && <Stats sales={sales} loaded={loaded} sellers={config.sellers} clients={clients} onReset={() => persistSales([])} onUndo={undoLast} fcolor={fcolor} goal={config.goal} onShowTicket={(s) => setTicket({ items: s.items, total: s.total, remise: s.remise, ts: s.ts, method: s.method, sellerName: s.sellerName })} />}
       {view === "reglages" && <Reglages menu={menu} config={config} setConfig={setConfig} />}
 
       {modal && <Wizard modal={modal} setModal={setModal} onComplete={completeSale} parfums={config.parfums} toppings={config.toppings} fcolor={fcolor} />}
-      {pay && <Payment subtotal={subtotal} onClose={() => setPay(null)} onPay={checkout} />}
+      {pay && <Payment subtotal={subtotal} onClose={() => setPay(null)} onPay={checkout} clients={clients} saveClient={saveClient} fidClient={fidClient} setFidClient={setFidClient} flash={flash} />}
       {ticket && <TicketModal ticket={ticket} onClose={() => setTicket(null)} />}
       {fidOpen && <FidPicker clients={clients} saveClient={saveClient} onClose={() => setFidOpen(false)} onSelect={(c) => { setFidClient(c); setFidOpen(false); flash(`${c.prenom} · ${c.tampons || 0} 🎟️`); }} />}
       {toast && <div className="fade" style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: C.noir, color: "#fff", padding: "12px 22px", borderRadius: 999, fontWeight: 700, fontSize: 14, zIndex: 70, textAlign: "center" }}>{toast}</div>}
@@ -386,6 +415,56 @@ function Fidelite({ clients, saveClient, flash }) {
         ); })}
         {list.length === 0 && <p style={{ color: C.soft, fontSize: 13, textAlign: "center", padding: "20px 0" }}>{q ? "Aucun client trouvé." : "Pas encore de client. Crée-en un depuis la caisse (bouton ❤️ Fidélité)."}</p>}
       </div>
+      <div style={{ height: 24 }} />
+    </div>
+  );
+}
+
+/* ===== Codes cadeaux (admin) — la roue se tourne côté CLIENT ===== */
+function Roue({ wheel, flash }) {
+  const [codes, setCodes] = useState([]);
+  const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const load = async () => { setLoading(true); try { const all = await DB.codesAll(); setCodes(all.sort((a, b) => (b.created || 0) - (a.created || 0))); } catch (e) {} setLoading(false); };
+  useEffect(() => { load(); }, []);
+  const list = codes.filter((c) => filter === "all" ? true : filter === "valid" ? !c.used : c.used);
+  const nbValid = codes.filter((c) => !c.used).length;
+  const nbUsed = codes.filter((c) => c.used).length;
+  const fidUrl = (typeof window !== "undefined" ? window.location.origin : "") + "/fidelite.html";
+  const copyUrl = () => { try { navigator.clipboard.writeText(fidUrl); flash("Lien copié"); } catch (e) {} };
+  return (
+    <div className="p-4" style={{ maxWidth: 760, margin: "0 auto" }}>
+      <div className="mb-3"><div style={{ fontWeight: 900, fontSize: 20 }}>🎁 Codes cadeaux</div><div style={{ color: C.soft, fontSize: 12 }}>La roue se tourne sur le téléphone du client (page fidélité). Ici tu vois et vérifies les codes gagnés.</div></div>
+      <div className="rounded-2xl p-3 mb-3 flex items-center gap-2 flex-wrap" style={{ background: "#fff7e6", border: `2px solid ${C.jaune}` }}>
+        <Sparkles size={18} color={C.brun} />
+        <div style={{ flex: 1, minWidth: 180, fontSize: 12, color: C.ink }}>La roue est sur la <b>page fidélité</b> : <span style={{ wordBreak: "break-all" }}>{fidUrl}</span></div>
+        <button onClick={copyUrl} className="tap flex items-center gap-1 px-3 py-2 rounded-xl" style={{ background: C.brun, color: "#fff", fontWeight: 700, fontSize: 12 }}><Copy size={14} /> Copier le lien</button>
+      </div>
+      <div className="grid grid-cols-3 gap-3 mb-3">
+        <Kpi label="Codes valides" value={String(nbValid)} color={C.vert} />
+        <Kpi label="Codes utilisés" value={String(nbUsed)} color={C.brun} />
+        <Kpi label="Total généré" value={String(codes.length)} color={C.rose} />
+      </div>
+      <div className="flex items-center gap-2 mb-3">
+        {[["all", "Tous"], ["valid", "Valides"], ["used", "Utilisés"]].map(([k, lab]) => <button key={k} onClick={() => setFilter(k)} className="tap px-4 py-2 rounded-full" style={{ background: filter === k ? C.rose : "#fff", color: filter === k ? "#fff" : C.ink, fontWeight: 700, fontSize: 13, border: `2px solid ${filter === k ? C.rose : C.line}` }}>{lab}</button>)}
+        <button onClick={load} className="tap flex items-center gap-1 ml-auto" style={{ color: C.soft, fontSize: 12, fontWeight: 600 }}><RotateCcw size={14} /> Actualiser</button>
+      </div>
+      <div className="rounded-2xl p-2" style={{ background: "#fff", border: `2px solid ${C.line}` }}>
+        {loading ? <p style={{ color: C.soft, fontSize: 13, textAlign: "center", padding: "16px 0" }}>Chargement…</p> : list.length === 0 ? <p style={{ color: C.soft, fontSize: 13, textAlign: "center", padding: "16px 0" }}>Aucun code.</p> : (
+          <div className="space-y-1" style={{ maxHeight: 420, overflowY: "auto" }}>
+            {list.map((c) => (
+              <div key={c.code} className="flex items-center justify-between gap-2 px-2 py-2" style={{ borderBottom: "1px solid #f0e6d2" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="flex items-center gap-2"><span style={{ fontWeight: 900, letterSpacing: 1, fontSize: 15 }}>{c.code}</span><span style={{ color: C.rose, fontWeight: 700, fontSize: 13 }}>{c.label}</span></div>
+                  <div style={{ color: C.soft, fontSize: 11 }}>{c.reason || "—"}{c.prenom ? " · " + c.prenom : ""}{c.created ? " · " + new Date(c.created).toLocaleDateString("fr-FR") : ""}</div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full shrink-0" style={{ background: c.used ? "#fde9e7" : "#e9f3e4", color: c.used ? C.rouge : C.vert, fontSize: 11, fontWeight: 800 }}>{c.used ? "utilisé" : "valide"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <p style={{ color: C.soft, fontSize: 12, marginTop: 12 }}>Régler les cadeaux de la roue → onglet <b>Réglages</b> → « Cadeaux de la roue ».</p>
       <div style={{ height: 24 }} />
     </div>
   );
@@ -590,32 +669,129 @@ function Wizard({ modal, setModal, onComplete, parfums, toppings, fcolor }) {
   );
 }
 
-/* ===== Payment ===== */
-function Payment({ subtotal, onClose, onPay }) {
-  const [mode, setMode] = useState("choice");
+/* ===== Payment (gate fidélité + code cadeau + paiement) ===== */
+function Payment({ subtotal, onClose, onPay, clients, saveClient, fidClient, setFidClient, flash }) {
+  const [mode, setMode] = useState(fidClient ? "choice" : "fid");
   const [remise, setRemise] = useState(0);
   const [remiseInput, setRemiseInput] = useState("");
   const [recu, setRecu] = useState("");
   const [sumup, setSumup] = useState("idle");
-  const total = Math.max(0, subtotal - remise);
+  // fidélité
+  const [fidQ, setFidQ] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [prenom, setPrenom] = useState("");
+  const [tel, setTel] = useState("");
+  // code cadeau
+  const [code, setCode] = useState(null);          // objet code validé
+  const [codeInput, setCodeInput] = useState("");
+  const [codeErr, setCodeErr] = useState("");
+  const [codeBusy, setCodeBusy] = useState(false);
+
+  const codeRemise = code ? (code.kind === "percent" ? subtotal * (code.value / 100) : code.kind === "euro" ? code.value : 0) : 0;
+  const totalRemise = Math.min(subtotal, remise + codeRemise);
+  const total = Math.max(0, subtotal - totalRemise);
   const rendu = recu ? parseFloat(recu.replace(",", ".")) - total : 0;
   const key = (k) => { if (k === "del") return setRecu((r) => r.slice(0, -1)); if (k === ".") return setRecu((r) => (r.includes(".") ? r : (r || "0") + ".")); setRecu((r) => (r + k).replace(/^0(\d)/, "$1")); };
-  const runSumup = () => { setMode("sumup"); setSumup("sending"); setTimeout(() => setSumup("ok"), 1300); setTimeout(() => onPay("Carte SumUp", remise), 2300); };
-  const applyRemise = () => { const v = parseFloat((remiseInput || "0").replace(",", ".")) || 0; setRemise(Math.min(subtotal, Math.max(0, v))); setMode("choice"); };
+  const finish = (method) => onPay(method, totalRemise, code);
+  const runSumup = () => { setMode("sumup"); setSumup("sending"); setTimeout(() => setSumup("ok"), 1300); setTimeout(() => finish("Carte SumUp"), 2300); };
+  const applyRemise = () => { const v = parseFloat((remiseInput || "0").replace(",", ".")) || 0; setRemise(Math.max(0, v)); setMode("choice"); };
+
+  const fidResults = fidQ.trim() ? clients.filter((c) => (c.prenom || "").toLowerCase().includes(fidQ.toLowerCase()) || cleanTel(c.tel).includes(cleanTel(fidQ))).slice(0, 6) : [];
+  const attach = (c) => { setFidClient(c); setMode("choice"); flash(`${c.prenom} · ${c.tampons || 0} 🎟️`); };
+  const createClient = async () => { if (!prenom.trim() || cleanTel(tel).length < 6) return; const c = await saveClient({ id: uid(), prenom: prenom.trim(), tel: cleanTel(tel), tampons: 0, visites: 0, consent: true, created: Date.now(), updated: Date.now() }); attach(c); };
+
+  const checkCode = async () => {
+    const c = (codeInput || "").trim().toUpperCase();
+    if (c.length < 4) { setCodeErr("Code trop court."); return; }
+    setCodeBusy(true); setCodeErr("");
+    try {
+      const found = await DB.codeGet(c);
+      if (!found) setCodeErr("Code inconnu.");
+      else if (found.used) setCodeErr("Code déjà utilisé.");
+      else { setCode(found); setMode("choice"); flash("🎁 " + found.label + " appliqué"); }
+    } catch (e) { setCodeErr("Erreur, réessaie."); }
+    setCodeBusy(false);
+  };
+
   return (
     <Overlay onClose={() => { if (sumup === "idle") onClose(); }}>
       <div className="fade" style={panel}>
         <div className="text-center mb-1" style={{ color: C.soft, fontWeight: 600, fontSize: 13 }}>Total à encaisser</div>
-        {remise > 0 && <div className="text-center" style={{ color: C.soft, fontSize: 13 }}><span style={{ textDecoration: "line-through" }}>{eur(subtotal)}</span> <span style={{ color: C.vert, fontWeight: 700 }}>− {eur(remise)}</span></div>}
-        <div className="text-center mb-4 logo" style={{ color: C.rose, fontSize: 46, lineHeight: 1 }}>{eur(total)}</div>
-        {mode === "choice" && (<div className="grid gap-2"><PayBtn icon={Banknote} label="Espèces" color={C.vert} onClick={() => setMode("cash")} /><PayBtn icon={Wallet} label="Carte · SumUp" color={C.noir} onClick={runSumup} /><PayBtn icon={CreditCard} label="Autre / manuel" color={C.brun} onClick={() => onPay("Manuel", remise)} /><button onClick={() => { setRemiseInput(remise ? String(remise) : ""); setMode("remise"); }} className="tap flex items-center justify-center gap-2 py-2 mt-1 rounded-xl" style={{ color: C.rose, fontWeight: 700, fontSize: 14, border: `2px dashed ${C.roseL}` }}><Tag size={15} /> {remise > 0 ? "Modifier la remise" : "Ajouter une remise"}</button><button onClick={onClose} className="tap py-2" style={{ color: C.soft, fontWeight: 600, fontSize: 13 }}>Retour au panier</button></div>)}
+        {totalRemise > 0 && <div className="text-center" style={{ color: C.soft, fontSize: 13 }}><span style={{ textDecoration: "line-through" }}>{eur(subtotal)}</span> <span style={{ color: C.vert, fontWeight: 700 }}>− {eur(totalRemise)}</span></div>}
+        <div className="text-center mb-3 logo" style={{ color: C.rose, fontSize: 46, lineHeight: 1 }}>{eur(total)}</div>
+
+        {/* badges actifs */}
+        {(fidClient || code) && mode !== "fid" && (
+          <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
+            {fidClient && <span className="flex items-center gap-1 px-3 py-1 rounded-full" style={{ background: C.rose, color: "#fff", fontWeight: 700, fontSize: 12 }}><Heart size={12} /> {fidClient.prenom}</span>}
+            {code && <span className="flex items-center gap-1 px-3 py-1 rounded-full" style={{ background: C.vert, color: "#fff", fontWeight: 700, fontSize: 12 }}><Gift size={12} /> {code.label} <X size={12} style={{ cursor: "pointer" }} onClick={() => setCode(null)} /></span>}
+          </div>
+        )}
+
+        {/* ÉTAPE 1 : Carte de fidélité ? */}
+        {mode === "fid" && !creating && (
+          <>
+            <Step label="Carte de fidélité ?" />
+            <div className="flex items-center gap-2 rounded-xl px-3 mb-2" style={{ background: C.creme }}>
+              <Search size={16} color={C.soft} />
+              <input autoFocus value={fidQ} onChange={(e) => setFidQ(e.target.value)} placeholder="N° de téléphone (ou prénom)…" inputMode="tel" style={{ flex: 1, background: "transparent", border: "none", padding: "11px 0", fontWeight: 600, fontSize: 14 }} />
+            </div>
+            {fidResults.length > 0 && (
+              <div className="space-y-1.5 mb-2" style={{ maxHeight: 180, overflowY: "auto" }}>
+                {fidResults.map((c) => <button key={c.id} onClick={() => attach(c)} className="tap w-full flex items-center justify-between gap-2 p-2.5 rounded-xl text-left" style={{ background: "#fff", border: `2px solid ${C.line}` }}><div style={{ minWidth: 0 }}><div style={{ fontWeight: 800, fontSize: 15 }}>{c.prenom}</div><div style={{ color: C.soft, fontSize: 12 }}>{c.tel}</div></div><span style={{ color: C.rose, fontWeight: 800 }}>{(c.tampons || 0) % TAMPONS_RECOMPENSE}/{TAMPONS_RECOMPENSE}</span></button>)}
+              </div>
+            )}
+            {fidQ.trim() && fidResults.length === 0 && <p style={{ color: C.soft, fontSize: 12, textAlign: "center", margin: "4px 0 8px" }}>Aucune carte trouvée.</p>}
+            <button onClick={() => { setCreating(true); setPrenom(fidQ.match(/[a-zA-ZÀ-ÿ]/) ? fidQ : ""); setTel(cleanTel(fidQ).length >= 6 ? cleanTel(fidQ) : ""); }} className="tap flex items-center justify-center gap-2 w-full py-3 rounded-2xl mb-2" style={{ background: C.rose, color: "#fff", fontWeight: 800, fontSize: 15 }}><Plus size={17} /> Nouvelle carte</button>
+            <button onClick={() => setMode("choice")} className="tap w-full py-2.5 rounded-2xl" style={{ background: C.creme, color: C.ink, fontWeight: 700, fontSize: 14 }}>Non, sans carte → continuer</button>
+            <button onClick={onClose} className="tap w-full py-2 mt-1" style={{ color: C.soft, fontWeight: 600, fontSize: 13 }}>Retour au panier</button>
+          </>
+        )}
+        {mode === "fid" && creating && (
+          <>
+            <Step label="Nouvelle carte de fidélité" />
+            <input autoFocus value={prenom} onChange={(e) => setPrenom(e.target.value)} placeholder="Prénom" style={{ width: "100%", padding: "12px", borderRadius: 12, border: `2px solid ${C.line}`, fontWeight: 600, fontSize: 15, marginBottom: 10 }} />
+            <div className="flex items-center gap-2 rounded-xl px-3 mb-2" style={{ border: `2px solid ${C.line}` }}><Phone size={16} color={C.soft} /><input value={tel} onChange={(e) => setTel(e.target.value)} placeholder="Téléphone" inputMode="tel" style={{ flex: 1, border: "none", padding: "10px 0", fontWeight: 600, fontSize: 15 }} /></div>
+            <p style={{ color: C.soft, fontSize: 11, marginBottom: 12 }}>Le client accepte de figurer dans le programme fidélité Crémà.</p>
+            <button onClick={createClient} className="tap w-full rounded-2xl" style={{ background: C.rose, color: "#fff", fontWeight: 800, fontSize: 16, padding: "13px 0" }}>Créer & continuer</button>
+            <button onClick={() => setCreating(false)} className="tap w-full py-2 mt-1" style={{ color: C.soft, fontWeight: 600, fontSize: 13 }}>Retour</button>
+          </>
+        )}
+
+        {/* ÉTAPE 2 : choix paiement */}
+        {mode === "choice" && (
+          <div className="grid gap-2">
+            <PayBtn icon={Banknote} label="Espèces" color={C.vert} onClick={() => setMode("cash")} />
+            <PayBtn icon={Wallet} label="Carte · SumUp" color={C.noir} onClick={runSumup} />
+            <PayBtn icon={CreditCard} label="Autre / manuel" color={C.brun} onClick={() => finish("Manuel")} />
+            <div className="flex gap-2 mt-1">
+              {!code && <button onClick={() => { setCodeInput(""); setCodeErr(""); setMode("code"); }} className="tap flex-1 flex items-center justify-center gap-2 py-2 rounded-xl" style={{ color: C.vert, fontWeight: 700, fontSize: 13, border: `2px dashed ${C.vert}` }}><Gift size={15} /> Code cadeau</button>}
+              <button onClick={() => { setRemiseInput(remise ? String(remise) : ""); setMode("remise"); }} className="tap flex-1 flex items-center justify-center gap-2 py-2 rounded-xl" style={{ color: C.rose, fontWeight: 700, fontSize: 13, border: `2px dashed ${C.roseL}` }}><Tag size={15} /> {remise > 0 ? "Remise" : "Remise"}</button>
+            </div>
+            {!fidClient && <button onClick={() => { setCreating(false); setMode("fid"); }} className="tap flex items-center justify-center gap-2 py-2 rounded-xl" style={{ color: C.rose, fontWeight: 700, fontSize: 13 }}><Heart size={14} /> Ajouter une carte de fidélité</button>}
+            <button onClick={onClose} className="tap py-2" style={{ color: C.soft, fontWeight: 600, fontSize: 13 }}>Retour au panier</button>
+          </div>
+        )}
+
+        {/* code cadeau */}
+        {mode === "code" && (
+          <>
+            <Step label="Code cadeau (roue)" />
+            <div className="flex items-center gap-2 mb-2"><input autoFocus value={codeInput} onChange={(e) => { setCodeInput(e.target.value.toUpperCase()); setCodeErr(""); }} onKeyDown={(e) => { if (e.key === "Enter") checkCode(); }} placeholder="CR-XXXX" style={{ flex: 1, textAlign: "center", padding: "14px", borderRadius: 14, border: `2px solid ${codeErr ? C.rouge : C.line}`, fontWeight: 800, fontSize: 22, letterSpacing: 2, textTransform: "uppercase" }} /></div>
+            {codeErr && <div style={{ color: C.rouge, fontSize: 13, fontWeight: 600, textAlign: "center", marginBottom: 8 }}>{codeErr}</div>}
+            <button onClick={checkCode} disabled={codeBusy} className="tap w-full rounded-2xl" style={{ background: C.vert, color: "#fff", fontWeight: 800, fontSize: 16, padding: "13px 0" }}>{codeBusy ? "Vérification…" : "Valider le code"}</button>
+            <button onClick={() => setMode("choice")} className="tap w-full py-2 mt-1" style={{ color: C.soft, fontWeight: 600, fontSize: 13 }}>Retour</button>
+          </>
+        )}
+
         {mode === "remise" && (<><Step label="Remise en €" /><div className="flex items-center gap-2 mb-3"><input autoFocus type="number" inputMode="decimal" step="0.5" value={remiseInput} onChange={(e) => setRemiseInput(e.target.value)} placeholder="0,00" style={{ flex: 1, textAlign: "center", padding: "14px", borderRadius: 14, border: `2px solid ${C.line}`, fontWeight: 800, fontSize: 24 }} /><span style={{ fontWeight: 800, fontSize: 20, color: C.soft }}>€</span></div><div className="flex gap-2 mb-3">{[1, 2, 5].map((v) => <button key={v} onClick={() => setRemiseInput(String(v))} className="tap flex-1 py-2 rounded-xl" style={{ background: C.creme, fontWeight: 700, fontSize: 14 }}>−{v}€</button>)}</div><button onClick={applyRemise} className="tap w-full rounded-2xl" style={{ background: C.rose, color: "#fff", fontWeight: 800, fontSize: 16, padding: "13px 0" }}>Appliquer</button><button onClick={() => { setRemise(0); setRemiseInput(""); setMode("choice"); }} className="tap w-full py-2 mt-1" style={{ color: C.soft, fontWeight: 600, fontSize: 13 }}>Enlever la remise</button></>)}
+
         {mode === "cash" && (<>
           <div className="flex items-center justify-between px-1 mb-2"><span style={{ fontWeight: 600, color: C.soft, fontSize: 13 }}>Reçu</span><span style={{ fontWeight: 800, fontSize: 20 }}>{recu ? eur(parseFloat(recu.replace(",", "."))) : "—"}</span></div>
           <div className="rounded-2xl mb-3 text-center py-3" style={{ background: rendu >= 0 && recu ? C.vert : C.creme, color: rendu >= 0 && recu ? "#fff" : C.soft }}><div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>À rendre</div><div style={{ fontSize: 28, fontWeight: 800 }}>{recu ? eur(Math.max(0, rendu)) : "—"}</div></div>
           <div className="flex gap-2 mb-2">{[total, Math.ceil(total / 5) * 5, Math.ceil(total / 10) * 10].filter((v, i, a) => a.indexOf(v) === i).map((v) => <button key={v} onClick={() => setRecu(String(v))} className="tap flex-1 py-2 rounded-xl" style={{ background: C.creme, fontWeight: 700, fontSize: 13 }}>{eur(v)}</button>)}</div>
           <div className="grid grid-cols-3 gap-2">{["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "del"].map((k) => <button key={k} onClick={() => key(k)} className="tap rounded-xl flex items-center justify-center" style={{ background: "#fff", border: `2px solid ${C.line}`, padding: "12px 0", fontWeight: 800, fontSize: 18 }}>{k === "del" ? <Delete size={18} color={C.rose} /> : k}</button>)}</div>
-          <button disabled={rendu < 0} onClick={() => onPay("Espèces", remise)} className="tap w-full rounded-2xl mt-3" style={{ background: rendu >= 0 ? C.vert : "#e7ddca", color: "#fff", fontWeight: 800, fontSize: 16, padding: "13px 0" }}>Valider l'encaissement</button>
+          <button disabled={rendu < 0} onClick={() => finish("Espèces")} className="tap w-full rounded-2xl mt-3" style={{ background: rendu >= 0 ? C.vert : "#e7ddca", color: "#fff", fontWeight: 800, fontSize: 16, padding: "13px 0" }}>Valider l'encaissement</button>
           <button onClick={() => { setMode("choice"); setRecu(""); }} className="tap w-full py-2 mt-1" style={{ color: C.soft, fontWeight: 600, fontSize: 13 }}>Changer de paiement</button>
         </>)}
         {mode === "sumup" && (<div className="text-center py-6">{sumup === "sending" ? (<><div className="mx-auto mb-4" style={{ width: 46, height: 46, borderRadius: "50%", border: `4px solid ${C.roseL}`, borderTopColor: C.rose, animation: "spin 1s linear infinite" }} /><div style={{ fontWeight: 700 }}>Envoi au terminal SumUp…</div><div style={{ color: C.soft, fontSize: 12, marginTop: 4 }}>Le client présente sa carte</div></>) : (<><div className="pop mx-auto mb-3 flex items-center justify-center" style={{ width: 60, height: 60, borderRadius: "50%", background: C.vert }}><Check size={34} color="#fff" /></div><div style={{ fontWeight: 800, color: C.vert }}>Paiement accepté</div></>)}</div>)}
@@ -635,7 +811,11 @@ function Reglages({ menu, config, setConfig }) {
   const editTop = (i, patch) => setConfig((c) => { const t = [...c.toppings]; t[i] = { ...t[i], ...patch }; return { ...c, toppings: t }; });
   const addTop = () => setConfig((c) => ({ ...c, toppings: [...c.toppings, { name: "Nouveau topping", price: 0.5 }] }));
   const delTop = (i) => setConfig((c) => ({ ...c, toppings: c.toppings.filter((_, j) => j !== i) }));
-  const reset = () => setConfig((c) => ({ prices: {}, parfums: DEF_PARFUMS, toppings: DEF_TOPPINGS, goal: 300, sellers: c.sellers, costs: DEF_COSTS }));
+  const wheel = config.wheel || DEF_WHEEL;
+  const editSeg = (i, patch) => setConfig((c) => { const w = [...(c.wheel || DEF_WHEEL)]; w[i] = { ...w[i], ...patch }; return { ...c, wheel: w }; });
+  const addSeg = () => setConfig((c) => { const w = [...(c.wheel || DEF_WHEEL)]; return { ...c, wheel: [...w, { label: "Nouveau", kind: "euro", value: 1, color: PALETTE[w.length % PALETTE.length] }] }; });
+  const delSeg = (i) => setConfig((c) => ({ ...c, wheel: (c.wheel || DEF_WHEEL).filter((_, j) => j !== i) }));
+  const reset = () => setConfig((c) => ({ prices: {}, parfums: DEF_PARFUMS, toppings: DEF_TOPPINGS, goal: 300, sellers: c.sellers, costs: DEF_COSTS, wheel: DEF_WHEEL }));
   const num = { width: 78, textAlign: "right", padding: "7px 9px", borderRadius: 10, border: `2px solid ${C.line}`, fontWeight: 700, fontSize: 14 };
   const txt = { flex: 1, minWidth: 0, padding: "7px 9px", borderRadius: 10, border: `2px solid ${C.line}`, fontWeight: 600, fontSize: 14 };
   const costLabels = { boule: "Boule de glace", cornet: "Cornet", pot: "Pot", gobelet: "Gobelet", cuillere: "Cuillère", serviette: "Serviette", paille: "Paille", coquedubai: "Coque Dubaï", dubaiBase: "Base Café Dubaï", drinkBase: "Base boisson", gaufreBase: "Base gaufre/crêpe" };
@@ -647,6 +827,26 @@ function Reglages({ menu, config, setConfig }) {
       <Sec title="Parfums" desc="Ajoute, renomme, change la couleur ou marque comme sorbet."><div className="space-y-2">{config.parfums.map((p, i) => (<div key={i} className="rounded-xl" style={{ background: C.creme, padding: 8 }}><div className="flex items-center gap-2"><button onClick={() => setOpenColor(openColor === i ? null : i)} className="tap shrink-0" style={{ width: 26, height: 26, borderRadius: "50%", background: p.c, border: "2px solid rgba(0,0,0,.12)" }} /><input value={p.n} onChange={(e) => editParfum(i, { n: e.target.value })} style={txt} /><button onClick={() => editParfum(i, { s: p.s ? 0 : 1 })} className="tap shrink-0 px-2 py-1 rounded-lg" style={{ background: p.s ? C.vert : "#fff", color: p.s ? "#fff" : C.soft, border: `2px solid ${p.s ? C.vert : C.line}`, fontSize: 11, fontWeight: 800 }}>SORBET</button><button onClick={() => delParfum(i)} className="tap shrink-0"><Trash2 size={17} color={C.rose} /></button></div>{openColor === i && <div className="flex flex-wrap gap-2 mt-2">{PALETTE.map((col) => <button key={col} onClick={() => { editParfum(i, { c: col }); setOpenColor(null); }} className="tap" style={{ width: 24, height: 24, borderRadius: "50%", background: col, border: p.c === col ? `3px solid ${C.noir}` : "2px solid rgba(0,0,0,.1)" }} />)}</div>}</div>))}</div><button onClick={addParfum} className="tap flex items-center justify-center gap-2 w-full mt-3 py-3 rounded-xl" style={{ background: "#fff", border: `2px dashed ${C.roseL}`, color: C.rose, fontWeight: 800, fontSize: 14 }}><Plus size={16} /> Ajouter un parfum</button></Sec>
       <Sec title="Prix des articles" desc="Touche un prix pour le modifier (en €).">{CAT_KEYS.map((k) => (<div key={k} className="mb-3"><div className="flex items-center gap-2 mb-1"><span style={{ width: 9, height: 9, borderRadius: "50%", background: menu[k].color }} /><span style={{ fontWeight: 800, fontSize: 13 }}>{menu[k].name}</span></div><div className="grid sm:grid-cols-2 gap-2">{menu[k].items.map((it) => (<div key={it.label} className="flex items-center justify-between gap-2 rounded-xl px-3 py-2" style={{ background: C.creme }}><span style={{ fontSize: 13, fontWeight: 600, minWidth: 0 }}>{it.label}</span><input type="number" step="0.5" inputMode="decimal" value={it.base} onChange={(e) => setPrice(k + "|" + it.label, parseFloat(e.target.value) || 0)} style={num} /></div>))}</div></div>))}</Sec>
       <Sec title="Suppléments toppings" desc="Le prix s'ajoute à la glace. Mets 0 pour offrir."><div className="space-y-2">{config.toppings.map((t, i) => (<div key={i} className="flex items-center gap-2 rounded-xl px-2 py-2" style={{ background: C.creme }}><input value={t.name} onChange={(e) => editTop(i, { name: e.target.value })} style={txt} /><input type="number" step="0.5" inputMode="decimal" value={t.price} onChange={(e) => editTop(i, { price: parseFloat(e.target.value) || 0 })} style={num} /><button onClick={() => delTop(i)} className="tap shrink-0"><Trash2 size={17} color={C.rose} /></button></div>))}</div><button onClick={addTop} className="tap flex items-center justify-center gap-2 w-full mt-3 py-3 rounded-xl" style={{ background: "#fff", border: `2px dashed ${C.roseL}`, color: C.rose, fontWeight: 800, fontSize: 14 }}><Plus size={16} /> Ajouter un topping</button></Sec>
+      <Sec title="🎡 Cadeaux de la roue" desc="Les cases de la roue. Type −€ (montant) ou −% (pourcentage). « Rejoue » et « Dommage » ne donnent pas de code.">
+        <div className="space-y-2">
+          {wheel.map((s, i) => (
+            <div key={i} className="rounded-xl" style={{ background: C.creme, padding: 8 }}>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setOpenColor(openColor === "w" + i ? null : "w" + i)} className="tap shrink-0" style={{ width: 26, height: 26, borderRadius: "50%", background: s.color, border: "2px solid rgba(0,0,0,.12)" }} />
+                <input value={s.label} onChange={(e) => editSeg(i, { label: e.target.value })} style={txt} />
+                <select value={s.kind} onChange={(e) => editSeg(i, { kind: e.target.value })} style={{ borderRadius: 10, border: `2px solid ${C.line}`, padding: "7px 6px", fontWeight: 700, fontSize: 13, background: "#fff" }}>
+                  <option value="euro">−€</option><option value="percent">−%</option><option value="replay">Rejoue</option><option value="none">Rien</option>
+                </select>
+                {(s.kind === "euro" || s.kind === "percent") && <input type="number" step={s.kind === "percent" ? "5" : "0.5"} inputMode="decimal" value={s.value} onChange={(e) => editSeg(i, { value: parseFloat(e.target.value) || 0 })} style={{ ...num, width: 64 }} />}
+                <button onClick={() => delSeg(i)} className="tap shrink-0"><Trash2 size={17} color={C.rose} /></button>
+              </div>
+              {openColor === "w" + i && <div className="flex flex-wrap gap-2 mt-2">{PALETTE.map((col) => <button key={col} onClick={() => { editSeg(i, { color: col }); setOpenColor(null); }} className="tap" style={{ width: 24, height: 24, borderRadius: "50%", background: col, border: s.color === col ? `3px solid ${C.noir}` : "2px solid rgba(0,0,0,.1)" }} />)}</div>}
+            </div>
+          ))}
+        </div>
+        <button onClick={addSeg} className="tap flex items-center justify-center gap-2 w-full mt-3 py-3 rounded-xl" style={{ background: "#fff", border: `2px dashed ${C.roseL}`, color: C.rose, fontWeight: 800, fontSize: 14 }}><Plus size={16} /> Ajouter une case</button>
+        <p style={{ color: C.soft, fontSize: 11, marginTop: 8 }}>Conseil : 6 à 8 cases pour une roue lisible. Garde au moins une case « Dommage » pour l'effet jeu.</p>
+      </Sec>
       <p style={{ color: C.soft, fontSize: 12, marginTop: 14 }}>Profils → écran d'accueil. Stock & commande → onglet Stock. Clients fidélité → onglet Fidélité.</p>
       <div style={{ height: 24 }} />
     </div>

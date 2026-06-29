@@ -9,30 +9,46 @@
 <title>Crémà — Ma carte de fidélité</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Pacifico&family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-<!-- Librairie Supabase -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --rose:#F05C8A; --roseL:#FFB6C9; --jaune:#FFD93D; --creme:#FFF4D8;
-    --brun:#B7773C; --vert:#7FA66A; --noir:#181818; --soft:#9a8d84; --line:#ece1cc;
+    --brun:#B7773C; --vert:#7FA66A; --noir:#181818; --soft:#9a8d84; --line:#ece1cc; --rouge:#E0524B;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   body{margin:0;background:var(--creme);color:var(--noir);font-family:'Inter',system-ui,sans-serif;min-height:100vh}
   .logo{font-family:'Pacifico',cursive}
   .awning{height:14px;background:repeating-linear-gradient(90deg,var(--jaune) 0 22px,var(--creme) 22px 44px)}
-  .wrap{max-width:460px;margin:0 auto;padding:24px 18px 40px}
+  .wrap{max-width:460px;margin:0 auto;padding:24px 18px 48px}
   .card{background:#fff;border:2px solid var(--line);border-radius:24px;padding:22px;box-shadow:0 10px 30px rgba(0,0,0,.05)}
   .tap{transition:transform .08s ease;cursor:pointer}.tap:active{transform:scale(.97)}
   input{font-family:inherit;font-size:17px;font-weight:600;width:100%;padding:14px;border-radius:14px;border:2px solid var(--line);outline:none}
   input:focus{border-color:var(--rose)}
   .btn{width:100%;border:none;border-radius:16px;padding:15px;font-weight:800;font-size:16px;color:#fff;background:var(--rose);cursor:pointer}
-  .btn:disabled{background:#e7ddca}
+  .btn.alt{background:var(--creme);color:var(--noir)}
+  .btn.green{background:var(--vert)}
+  .btn:disabled{background:#e7ddca;cursor:not-allowed}
   .stamp{width:100%;aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;border:2px solid var(--line);background:#fff}
   .stamp.on{background:var(--rose);border-color:var(--rose)}
   .muted{color:var(--soft);font-size:13px}
   .spin{width:42px;height:42px;border-radius:50%;border:4px solid var(--roseL);border-top-color:var(--rose);animation:s 1s linear infinite;margin:24px auto}
   @keyframes s{to{transform:rotate(360deg)}}
   .fade{animation:f .25s ease}@keyframes f{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
+  .pop{animation:p .4s cubic-bezier(.2,1.3,.4,1)}@keyframes p{from{transform:scale(.5);opacity:0}to{transform:scale(1)}}
+  /* roue */
+  .wheelBox{position:relative;width:300px;max-width:84vw;aspect-ratio:1;margin:8px auto}
+  .pointer{position:absolute;top:-4px;left:50%;transform:translateX(-50%);z-index:6;width:0;height:0;
+    border-left:16px solid transparent;border-right:16px solid transparent;border-top:26px solid var(--noir);
+    filter:drop-shadow(0 3px 3px rgba(0,0,0,.25))}
+  .pointer:after{content:"";position:absolute;top:-30px;left:-9px;width:18px;height:18px;border-radius:50%;background:var(--noir)}
+  #wheel{width:100%;height:100%;transition:none;filter:drop-shadow(0 10px 22px rgba(0,0,0,.18))}
+  .hub{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:5;width:58px;height:58px;border-radius:50%;
+    background:#fff;border:4px solid var(--rose);display:flex;align-items:center;justify-content:center}
+  .codebig{display:inline-flex;align-items:center;gap:10px;background:var(--noir);color:#fff;font-weight:900;
+    font-size:30px;letter-spacing:4px;padding:14px 22px;border-radius:18px;cursor:pointer}
+  .reasonBtn{display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--creme);
+    border:2px solid var(--line);border-radius:18px;padding:18px 0;font-weight:800;font-size:15px;cursor:pointer}
+  .reasonBtn .emo{font-size:34px;margin-bottom:6px}
 </style>
 </head>
 <body>
@@ -40,105 +56,233 @@
   <div class="wrap">
     <div style="text-align:center;margin-bottom:18px">
       <div class="logo" style="color:var(--rose);font-size:54px;line-height:1;transform:rotate(-3deg)">Crémà</div>
-      <div class="muted" style="font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-top:4px">Carte de fidélité</div>
+      <div class="muted" style="font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-top:4px">Ma carte de fidélité</div>
     </div>
     <div id="app"></div>
     <p class="muted" style="text-align:center;margin-top:22px;font-size:12px">Glaces artisanales bio · Albi · @crema.albi</p>
   </div>
 
 <script>
-/* ===== CONFIG SUPABASE — colle tes 2 valeurs ici ===== */
-const SUPABASE_URL = "https://eamxekdxzrdvntphoerj.supabase.co";   // ex: https://xxxx.supabase.co
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhbXhla2R4enJkdm50cGhvZXJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NjM5OTEsImV4cCI6MjA5ODMzOTk5MX0.y8zEKUrzDxEUqRQ5vW6EpDXUHWWBK0eKzcsNCvJqdeY";   // clé "anon public"
-const RECOMPENSE = 10;     // tampons pour 1 récompense
-/* ===================================================== */
+/* ===== CONFIG SUPABASE ===== */
+const SUPABASE_URL = "https://eamxekdxzrdvntphoerj.supabase.co";   // colle ton Project URL
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhbXhla2R4enJkdm50cGhvZXJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NjM5OTEsImV4cCI6MjA5ODMzOTk5MX0.y8zEKUrzDxEUqRQ5vW6EpDXUHWWBK0eKzcsNCvJqdeY";   // colle ta clé anon public
+const RECOMPENSE = 10;
+const SPIN_COOLDOWN_H = 20;   // 1 tour / ~jour par raison
+const COUNTDOWN = 15;         // secondes avant de pouvoir tourner
+const CONF_KEY = "crema:config:v4";
+const CODE_PREFIX = "code:";
+/* roue par défaut si la config boutique n'est pas trouvée */
+const DEF_WHEEL = [
+  { label:"1 boule offerte", kind:"euro", value:3, color:"#F05C8A" },
+  { label:"-20%", kind:"percent", value:20, color:"#7FA66A" },
+  { label:"Topping offert", kind:"euro", value:0.5, color:"#EBCB6B" },
+  { label:"-10%", kind:"percent", value:10, color:"#B7773C" },
+  { label:"Milkshake -2€", kind:"euro", value:2, color:"#d63a63" },
+  { label:"Café Dubaï -1€", kind:"euro", value:1, color:"#6b4a2f" },
+  { label:"Rejoue 🎉", kind:"replay", value:0, color:"#FFD93D" },
+  { label:"Dommage 😅", kind:"none", value:0, color:"#CFC2A6" },
+];
+/* ============================ */
 
 const app = document.getElementById("app");
 const clean = (t)=> (t||"").replace(/[^0-9+]/g,"");
-let sb = null;
-if (SUPABASE_URL && SUPABASE_KEY && window.supabase) {
-  try { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch(e){ sb=null; }
+const codeChars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const genCode = ()=> "CR-" + Array.from({length:4},()=>codeChars[Math.floor(Math.random()*codeChars.length)]).join("");
+let sb = null, WHEEL = DEF_WHEEL, rot = 0;
+if (SUPABASE_URL && SUPABASE_KEY && window.supabase) { try { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch(e){ sb=null; } }
+
+async function loadWheel(){
+  if(!sb) return;
+  try{ const {data}=await sb.from("kv").select("value").eq("key",CONF_KEY).maybeSingle(); if(data&&data.value&&Array.isArray(data.value.wheel)&&data.value.wheel.length>=2) WHEEL=data.value.wheel; }catch(e){}
 }
 
-function screenSetup(){
-  app.innerHTML = `<div class="card fade" style="text-align:center">
-    <div style="font-weight:800;font-size:18px;margin-bottom:8px">Page pas encore activée</div>
-    <p class="muted">Le propriétaire doit coller ses identifiants Supabase en haut du fichier pour que la carte fonctionne. (Voir le guide.)</p>
-  </div>`;
-}
+/* ---------- écrans ---------- */
+function screenSetup(){ app.innerHTML = `<div class="card fade" style="text-align:center"><div style="font-weight:800;font-size:18px;margin-bottom:8px">Page pas encore activée</div><p class="muted">Le propriétaire doit coller ses identifiants Supabase en haut du fichier.</p></div>`; }
 
 function screenAsk(prefill=""){
   app.innerHTML = `<div class="card fade">
     <div style="font-weight:800;font-size:18px;margin-bottom:4px">Retrouve ta carte</div>
     <p class="muted" style="margin:0 0 16px">Entre le numéro de téléphone donné en boutique.</p>
     <input id="tel" inputmode="tel" placeholder="Ton téléphone" value="${prefill}" />
-    <div id="err" class="muted" style="color:#E0524B;margin:8px 2px 0;display:none"></div>
-    <button class="btn tap" id="go" style="margin-top:14px">Voir mes tampons</button>
+    <div id="err" class="muted" style="color:var(--rouge);margin:8px 2px 0;display:none"></div>
+    <button class="btn tap" id="go" style="margin-top:14px">Voir ma carte</button>
   </div>`;
-  const tel = document.getElementById("tel");
-  const go = document.getElementById("go");
-  tel.focus();
-  go.onclick = ()=> lookup(tel.value);
-  tel.onkeydown = (e)=>{ if(e.key==="Enter") lookup(tel.value); };
+  const tel=document.getElementById("tel"), go=document.getElementById("go");
+  tel.focus(); go.onclick=()=>lookup(tel.value); tel.onkeydown=(e)=>{ if(e.key==="Enter") lookup(tel.value); };
 }
 
-function loading(){ app.innerHTML = `<div class="card"><div class="spin"></div><p class="muted" style="text-align:center">Recherche…</p></div>`; }
+function loading(msg){ app.innerHTML = `<div class="card"><div class="spin"></div><p class="muted" style="text-align:center">${msg||"Recherche…"}</p></div>`; }
 
 async function lookup(raw){
   const tel = clean(raw);
-  if (tel.length < 6){ const e=document.getElementById("err"); if(e){e.style.display="block";e.textContent="Numéro trop court.";} return; }
+  if (tel.length<6){ const e=document.getElementById("err"); if(e){e.style.display="block";e.textContent="Numéro trop court.";} return; }
   loading();
-  try {
+  try{
     const { data, error } = await sb.from("clients").select("*").eq("tel", tel).maybeSingle();
     if (error) throw error;
     if (!data){ screenNotFound(tel); return; }
-    try { localStorage.setItem("crema_tel", tel); } catch(e){}
-    screenCard(data);
-  } catch(e){
-    app.innerHTML = `<div class="card fade"><div style="font-weight:800;margin-bottom:6px">Oups</div><p class="muted">Impossible de récupérer la carte pour le moment.</p><button class="btn tap" style="margin-top:12px" onclick="screenAsk('${tel}')">Réessayer</button></div>`;
+    try{ localStorage.setItem("crema_tel", tel); }catch(e){}
+    CURRENT = data; screenCard(data);
+  }catch(e){
+    app.innerHTML = `<div class="card fade"><div style="font-weight:800;margin-bottom:6px">Oups</div><p class="muted">Connexion impossible pour le moment.</p><button class="btn tap" style="margin-top:12px" onclick="screenAsk('${tel}')">Réessayer</button></div>`;
   }
 }
 
 function screenNotFound(tel){
-  app.innerHTML = `<div class="card fade" style="text-align:center">
-    <div style="font-size:40px">🔍</div>
-    <div style="font-weight:800;font-size:18px;margin:6px 0">Pas encore de carte</div>
-    <p class="muted">Aucune carte trouvée pour ce numéro. Passe en boutique pour créer ta carte de fidélité Crémà !</p>
-    <button class="btn tap" style="margin-top:14px;background:var(--creme);color:var(--noir)" onclick="screenAsk('${tel}')">Changer de numéro</button>
-  </div>`;
+  app.innerHTML = `<div class="card fade" style="text-align:center"><div style="font-size:40px">🔍</div><div style="font-weight:800;font-size:18px;margin:6px 0">Pas encore de carte</div><p class="muted">Aucune carte pour ce numéro. Passe en boutique créer ta carte Crémà (gratuit) — tu pourras ensuite tenter la roue !</p><button class="btn tap alt" style="margin-top:14px" onclick="screenAsk('${tel}')">Changer de numéro</button></div>`;
 }
 
+let CURRENT = null;
+
 function screenCard(c){
-  const total = c.tampons || 0;
-  const cur = total % RECOMPENSE;
-  const ready = total >= RECOMPENSE;
-  const filled = ready && cur===0 ? RECOMPENSE : cur;
-  let cells = "";
-  for(let i=0;i<RECOMPENSE;i++){ cells += `<div class="stamp ${i<filled?'on':''}">${i<filled?'🍦':''}</div>`; }
-  app.innerHTML = `<div class="card fade">
+  const total=c.tampons||0, cur=total%RECOMPENSE, ready=total>=RECOMPENSE;
+  const filled = ready&&cur===0 ? RECOMPENSE : cur;
+  let cells=""; for(let i=0;i<RECOMPENSE;i++){ cells += `<div class="stamp ${i<filled?'on':''}">${i<filled?'🍦':''}</div>`; }
+  app.innerHTML = `
+  <div class="card fade">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
       <div style="font-weight:900;font-size:22px">Salut ${c.prenom||""} 👋</div>
       <div style="background:var(--creme);border-radius:999px;padding:5px 12px;font-weight:800;color:var(--rose)">${cur}/${RECOMPENSE}</div>
     </div>
-    <p class="muted" style="margin:0 0 16px">${ready ? "🎁 Ta récompense t'attend en boutique !" : `Plus que <b style="color:var(--rose)">${RECOMPENSE-cur}</b> avant ta récompense.`}</p>
+    <p class="muted" style="margin:0 0 16px">${ready?"🎁 Ta récompense t'attend en boutique !":`Plus que <b style="color:var(--rose)">${RECOMPENSE-cur}</b> avant ta récompense.`}</p>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">${cells}</div>
-    <div style="display:flex;justify-content:space-between;margin-top:18px" class="muted">
-      <span>Total : <b style="color:var(--noir)">${total}</b> tampons</span>
-      <span>${c.visites||0} visite${(c.visites||0)>1?'s':''}</span>
-    </div>
-    <button class="btn tap" id="refresh" style="margin-top:18px">Actualiser</button>
-    <button class="btn tap" style="margin-top:8px;background:var(--creme);color:var(--soft)" onclick="screenAsk()">Changer de numéro</button>
-    <p class="muted" style="text-align:center;margin-top:16px;font-size:12px">Astuce : ajoute cette page à ton écran d'accueil pour la retrouver vite ✨</p>
-  </div>`;
-  document.getElementById("refresh").onclick = ()=> lookup(c.tel);
+    <div style="display:flex;justify-content:space-between;margin-top:18px" class="muted"><span>Total : <b style="color:var(--noir)">${total}</b> tampons</span><span>${c.visites||0} visite${(c.visites||0)>1?'s':''}</span></div>
+  </div>
+  <div class="card fade" style="margin-top:14px;text-align:center;background:linear-gradient(180deg,#fff, #fff8fb)">
+    <div style="font-weight:900;font-size:20px">🎡 Tente ta chance</div>
+    <p class="muted" style="margin:6px 0 14px">Laisse un avis Google ⭐ ou poste une story Insta 📸 → tu gagnes un cadeau à utiliser en boutique !</p>
+    <button class="btn tap" onclick="screenWheelIntro()">Tourner la roue</button>
+  </div>
+  <button class="btn tap alt" style="margin-top:10px" onclick="screenAsk()">Changer de numéro</button>
+  <p class="muted" style="text-align:center;margin-top:14px;font-size:12px">Astuce : ajoute cette page à ton écran d'accueil ✨</p>`;
 }
 
-/* démarrage */
-if (!sb){ screenSetup(); }
-else {
-  let saved=""; try{ saved=localStorage.getItem("crema_tel")||""; }catch(e){}
-  if (saved) lookup(saved); else screenAsk();
+function canSpin(reason){
+  const key = reason==="Avis Google" ? "google" : "insta";
+  let last = (CURRENT.spins||{})[key] || 0;
+  try{ const ls = parseInt(localStorage.getItem("crema_spin_"+CURRENT.tel+"_"+key)||"0"); if(ls>last) last=ls; }catch(e){}
+  const h = (Date.now()-last)/3600000;
+  return h >= SPIN_COOLDOWN_H ? null : Math.ceil(SPIN_COOLDOWN_H - h);
 }
+
+function screenWheelIntro(){
+  app.innerHTML = `
+  <div class="card fade" style="text-align:center">
+    <div style="font-weight:900;font-size:20px;margin-bottom:4px">Pourquoi ce tour ?</div>
+    <p class="muted" style="margin:0 0 16px">Choisis ton geste, puis montre-le en boutique 😉</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="reasonBtn tap" onclick="reasonPick('Avis Google')"><span class="emo">⭐</span>Avis Google</div>
+      <div class="reasonBtn tap" onclick="reasonPick('Story Instagram')"><span class="emo">📸</span>Story Insta</div>
+    </div>
+    <button class="btn tap alt" style="margin-top:14px" onclick="screenCard(CURRENT)">Retour</button>
+  </div>`;
+}
+
+function reasonPick(reason){
+  const wait = canSpin(reason);
+  if (wait){ 
+    app.innerHTML = `<div class="card fade" style="text-align:center"><div style="font-size:40px">⏳</div><div style="font-weight:800;font-size:18px;margin:6px 0">Déjà joué !</div><p class="muted">Tu as déjà tenté ta chance avec « ${reason} ». Reviens dans ~${wait}h pour rejouer.</p><button class="btn tap alt" style="margin-top:14px" onclick="screenWheelIntro()">Retour</button></div>`;
+    return;
+  }
+  screenWheel(reason);
+}
+
+/* construit la roue SVG (labels radiaux lisibles) */
+function buildWheelSVG(){
+  const N=WHEEL.length, seg=360/N;
+  const pt=(r,deg)=>{ const a=(deg-90)*Math.PI/180; return [100+r*Math.cos(a), 100+r*Math.sin(a)]; };
+  let paths="", labels="";
+  for(let i=0;i<N;i++){
+    const a1=i*seg, a2=(i+1)*seg, mid=a1+seg/2;
+    const [x1,y1]=pt(99,a1), [x2,y2]=pt(99,a2);
+    const large = seg>180?1:0;
+    paths += `<path d="M100,100 L${x1.toFixed(2)},${y1.toFixed(2)} A99,99 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${WHEEL[i].color}" stroke="#fff" stroke-width="1.6"/>`;
+    const flip = (mid>90 && mid<270);
+    const lab = (WHEEL[i].label||"").length>13 ? WHEEL[i].label.slice(0,12)+"…" : (WHEEL[i].label||"");
+    labels += `<g transform="rotate(${mid} 100 100)"><text x="100" y="${flip?'70':'34'}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="8.6" font-weight="800" font-family="Inter,sans-serif" ${flip?'transform="rotate(180 100 70)"':''} style="paint-order:stroke;stroke:rgba(0,0,0,.18);stroke-width:.6px">${lab.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</text></g>`;
+  }
+  return `<svg id="wheel" viewBox="0 0 200 200"><circle cx="100" cy="100" r="99.5" fill="none" stroke="rgba(0,0,0,.08)" stroke-width="1"/>${paths}${labels}</svg>`;
+}
+
+function screenWheel(reason){
+  app.innerHTML = `
+  <div class="card fade" style="text-align:center">
+    <div style="display:inline-block;background:var(--creme);border-radius:999px;padding:5px 14px;font-weight:700;font-size:13px;margin-bottom:8px">${reason==='Avis Google'?'⭐ Avis Google':'📸 Story Instagram'}</div>
+    <div class="wheelBox">
+      <div class="pointer"></div>
+      ${buildWheelSVG()}
+      <div class="hub"><span class="logo" style="color:var(--rose);font-size:18px">C</span></div>
+    </div>
+    <div id="wstate" style="margin-top:14px"></div>
+  </div>`;
+  rot = 0;
+  const wheel = document.getElementById("wheel");
+  wheel.style.transition="none"; wheel.style.transform="rotate(0deg)";
+  // compte à rebours
+  let n = COUNTDOWN;
+  const st = document.getElementById("wstate");
+  st.innerHTML = `<div class="logo" style="color:var(--rose);font-size:38px">${n}s</div><div class="muted" style="font-weight:600">Publie ton avis / ta story… 😉</div>`;
+  const iv = setInterval(()=>{
+    n--;
+    if(n<=0){ clearInterval(iv); st.innerHTML = `<button class="btn tap" style="font-size:20px;padding:17px" onclick="doSpin('${reason}')">🎯 TOURNER !</button>`; }
+    else st.innerHTML = `<div class="logo" style="color:var(--rose);font-size:38px">${n}s</div><div class="muted" style="font-weight:600">Publie ton avis / ta story… 😉</div>`;
+  },1000);
+}
+
+async function doSpin(reason){
+  const wheel = document.getElementById("wheel");
+  const st = document.getElementById("wstate");
+  const N=WHEEL.length, seg=360/N;
+  const w = Math.floor(Math.random()*N);
+  const center = w*seg + seg/2;
+  const target = 360*6 + (360 - center);
+  st.innerHTML = `<div class="muted" style="font-weight:700">La roue tourne… 🤞</div>`;
+  // forcer reflow puis animer
+  wheel.style.transition="none"; wheel.style.transform="rotate(0deg)"; wheel.getBoundingClientRect();
+  requestAnimationFrame(()=>{ wheel.style.transition="transform 4.6s cubic-bezier(.16,.7,.18,1)"; wheel.style.transform=`rotate(${target}deg)`; });
+  setTimeout(()=>finishSpin(reason, WHEEL[w]), 4750);
+}
+
+async function finishSpin(reason, prize){
+  const st = document.getElementById("wstate");
+  // enregistrer le cooldown
+  try{
+    const key = reason==="Avis Google" ? "google" : "insta";
+    CURRENT.spins = Object.assign({}, CURRENT.spins, { [key]: Date.now() });
+    try{ localStorage.setItem("crema_spin_"+CURRENT.tel+"_"+key, String(Date.now())); }catch(e){}
+    if(sb) await sb.from("clients").update({ spins: CURRENT.spins }).eq("id", CURRENT.id);
+  }catch(e){}
+
+  if (prize.kind==="none"){
+    st.innerHTML = `<div class="pop"><div style="font-size:42px">😅</div><div style="font-weight:800;font-size:18px">${prize.label}</div><p class="muted">Pas de chance cette fois !</p><button class="btn tap alt" style="margin-top:10px" onclick="screenCard(CURRENT)">Retour à ma carte</button></div>`;
+    return;
+  }
+  if (prize.kind==="replay"){
+    st.innerHTML = `<div class="pop"><div style="font-size:42px">🎉</div><div style="font-weight:800;font-size:18px">Tu rejoues !</div><button class="btn tap" style="margin-top:10px" onclick="screenWheel('${reason}')">Retourner la roue</button></div>`;
+    return;
+  }
+  // gain avec code
+  const code = { code:genCode(), label:prize.label, kind:prize.kind, value:prize.value, reason, prenom:CURRENT.prenom||"", tel:CURRENT.tel||"", used:false, created:Date.now() };
+  try{ if(sb) await sb.from("kv").upsert({ key:CODE_PREFIX+code.code, value:code }); }catch(e){}
+  st.innerHTML = `<div class="pop">
+    <div style="font-size:40px">🎁</div>
+    <div style="font-weight:900;font-size:24px;color:var(--rose);margin:2px 0 4px">${prize.label}</div>
+    <div class="muted" style="font-weight:600">Montre ce code en caisse :</div>
+    <div class="codebig tap" style="margin:8px auto 0" onclick="copyCode('${code.code}')">${code.code} <span style="font-size:16px">📋</span></div>
+    <p class="muted" style="margin-top:10px;font-size:12px">Code à usage unique. Prends-le en photo pour ne pas l'oublier !</p>
+    <button class="btn tap alt" style="margin-top:12px" onclick="screenCard(CURRENT)">Retour à ma carte</button>
+  </div>`;
+}
+
+function copyCode(c){ try{ navigator.clipboard.writeText(c); }catch(e){} }
+
+/* ---------- démarrage ---------- */
+(async ()=>{
+  if(!sb){ screenSetup(); return; }
+  await loadWheel();
+  let saved=""; try{ saved=localStorage.getItem("crema_tel")||""; }catch(e){}
+  if(saved) lookup(saved); else screenAsk();
+})();
 </script>
 </body>
 </html>
