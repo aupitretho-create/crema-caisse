@@ -49,6 +49,17 @@
   .reasonBtn{display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--creme);
     border:2px solid var(--line);border-radius:18px;padding:18px 0;font-weight:800;font-size:15px;cursor:pointer}
   .reasonBtn .emo{font-size:34px;margin-bottom:6px}
+  /* paliers */
+  .goals{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+  .goal{display:flex;align-items:center;gap:9px;border:2px solid var(--line);border-radius:14px;padding:10px 12px;background:#fff}
+  .goal .ic{font-size:26px;filter:grayscale(1);opacity:.42;transition:.3s}
+  .goal .t{font-size:12px;font-weight:800;color:var(--soft);line-height:1.15}
+  .goal .bg{margin-left:auto;font-size:12px;font-weight:900;color:var(--soft)}
+  .goal.on{border-color:var(--vert);background:#f0f7ec}
+  .goal.on .ic{filter:none;opacity:1}
+  .goal.on .t,.goal.on .bg{color:var(--vert)}
+  .backcard{margin-top:12px;background:#fff;color:var(--rose);border:2px solid var(--roseL);
+    display:flex;align-items:center;justify-content:center;gap:8px}
 </style>
 </head>
 <body>
@@ -64,8 +75,8 @@
 
 <script>
 /* ===== CONFIG SUPABASE ===== */
-const SUPABASE_URL = "https://eamxekdxzrdvntphoerj.supabase.co";   // colle ton Project URL
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhbXhla2R4enJkdm50cGhvZXJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NjM5OTEsImV4cCI6MjA5ODMzOTk5MX0.y8zEKUrzDxEUqRQ5vW6EpDXUHWWBK0eKzcsNCvJqdeY";   // colle ta clé anon public
+const SUPABASE_URL = "";   // colle ton Project URL
+const SUPABASE_KEY = "";   // colle ta clé anon public
 const RECOMPENSE = 10;
 const SPIN_COOLDOWN_H = 20;   // 1 tour / ~jour par raison
 const COUNTDOWN = 15;         // secondes avant de pouvoir tourner
@@ -73,14 +84,14 @@ const CONF_KEY = "crema:config:v4";
 const CODE_PREFIX = "code:";
 /* roue par défaut si la config boutique n'est pas trouvée */
 const DEF_WHEEL = [
-  { label:"1 boule offerte", kind:"euro", value:3, color:"#F05C8A" },
+  { label:"1 boule", kind:"euro", value:3, color:"#F05C8A" },
   { label:"-20%", kind:"percent", value:20, color:"#7FA66A" },
-  { label:"Topping offert", kind:"euro", value:0.5, color:"#EBCB6B" },
+  { label:"Topping", kind:"euro", value:0.5, color:"#EBCB6B" },
   { label:"-10%", kind:"percent", value:10, color:"#B7773C" },
-  { label:"Milkshake -2€", kind:"euro", value:2, color:"#d63a63" },
-  { label:"Café Dubaï -1€", kind:"euro", value:1, color:"#6b4a2f" },
-  { label:"Rejoue 🎉", kind:"replay", value:0, color:"#FFD93D" },
-  { label:"Dommage 😅", kind:"none", value:0, color:"#CFC2A6" },
+  { label:"Shake -2€", kind:"euro", value:2, color:"#d63a63" },
+  { label:"Dubaï -1€", kind:"euro", value:1, color:"#6b4a2f" },
+  { label:"Rejoue", kind:"replay", value:0, color:"#FFD93D" },
+  { label:"Dommage", kind:"none", value:0, color:"#CFC2A6" },
 ];
 /* ============================ */
 
@@ -133,10 +144,13 @@ function screenNotFound(tel){
 }
 
 let CURRENT = null;
+const CARD_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18"/></svg>';
+const backCardBtn = `<button class="btn tap backcard" onclick="screenCard(CURRENT)">${CARD_SVG} Revenir à ma carte</button>`;
 
 function screenCard(c){
-  const total=c.tampons||0, cur=total%RECOMPENSE, ready=total>=RECOMPENSE;
-  const filled = ready&&cur===0 ? RECOMPENSE : cur;
+  const total=c.tampons||0, cur=total%RECOMPENSE, ready=total>=RECOMPENSE&&cur===0;
+  const filled = ready ? RECOMPENSE : cur;
+  const drinkOn = cur>=5 || ready;
   let cells=""; for(let i=0;i<RECOMPENSE;i++){ cells += `<div class="stamp ${i<filled?'on':''}">${i<filled?'🍦':''}</div>`; }
   app.innerHTML = `
   <div class="card fade">
@@ -144,17 +158,21 @@ function screenCard(c){
       <div style="font-weight:900;font-size:22px">Salut ${c.prenom||""} 👋</div>
       <div style="background:var(--creme);border-radius:999px;padding:5px 12px;font-weight:800;color:var(--rose)">${cur}/${RECOMPENSE}</div>
     </div>
-    <p class="muted" style="margin:0 0 16px">${ready?"🎁 Ta récompense t'attend en boutique !":`Plus que <b style="color:var(--rose)">${RECOMPENSE-cur}</b> avant ta récompense.`}</p>
+    <p class="muted" style="margin:0 0 16px">${ready?"🎁 Ta glace offerte t'attend en boutique !":`Plus que <b style="color:var(--rose)">${RECOMPENSE-cur}</b> avant ta glace offerte.`}</p>
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">${cells}</div>
-    <div style="display:flex;justify-content:space-between;margin-top:18px" class="muted"><span>Total : <b style="color:var(--noir)">${total}</b> tampons</span><span>${c.visites||0} visite${(c.visites||0)>1?'s':''}</span></div>
+    <div class="goals">
+      <div class="goal ${drinkOn?'on':''}"><span class="ic">🥤</span><div class="t">Boisson<br>offerte</div><span class="bg">${drinkOn?'✓':'5'}</span></div>
+      <div class="goal ${ready?'on':''}"><span class="ic">🍦</span><div class="t">Glace<br>offerte</div><span class="bg">${ready?'✓':'10'}</span></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:16px" class="muted"><span>Total : <b style="color:var(--noir)">${total}</b> tampons</span><span>${c.visites||0} visite${(c.visites||0)>1?'s':''}</span></div>
   </div>
-  <div class="card fade" style="margin-top:14px;text-align:center;background:linear-gradient(180deg,#fff, #fff8fb)">
+  <div class="card fade" style="margin-top:14px;text-align:center;background:linear-gradient(180deg,#fff,#fff8fb)">
     <div style="font-weight:900;font-size:20px">🎡 Tente ta chance</div>
     <p class="muted" style="margin:6px 0 14px">Laisse un avis Google ⭐ ou poste une story Insta 📸 → tu gagnes un cadeau à utiliser en boutique !</p>
     <button class="btn tap" onclick="screenWheelIntro()">Tourner la roue</button>
   </div>
-  <button class="btn tap alt" style="margin-top:10px" onclick="screenAsk()">Changer de numéro</button>
-  <p class="muted" style="text-align:center;margin-top:14px;font-size:12px">Astuce : ajoute cette page à ton écran d'accueil ✨</p>`;
+  <button class="btn tap" style="margin-top:12px" onclick="addToHome()">📲 Ajouter à l'écran d'accueil</button>
+  <button class="btn tap alt" style="margin-top:8px" onclick="screenAsk()">Changer de numéro</button>`;
 }
 
 function canSpin(reason){
@@ -187,21 +205,26 @@ function reasonPick(reason){
   screenWheel(reason);
 }
 
-/* construit la roue SVG (labels radiaux lisibles) */
+/* construit la roue SVG (badges sombres lisibles) */
 function buildWheelSVG(){
   const N=WHEEL.length, seg=360/N;
   const pt=(r,deg)=>{ const a=(deg-90)*Math.PI/180; return [100+r*Math.cos(a), 100+r*Math.sin(a)]; };
-  let paths="", labels="";
+  let paths="", badges="";
   for(let i=0;i<N;i++){
     const a1=i*seg, a2=(i+1)*seg, mid=a1+seg/2;
     const [x1,y1]=pt(99,a1), [x2,y2]=pt(99,a2);
     const large = seg>180?1:0;
     paths += `<path d="M100,100 L${x1.toFixed(2)},${y1.toFixed(2)} A99,99 0 ${large} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${WHEEL[i].color}" stroke="#fff" stroke-width="1.6"/>`;
+    let lab=(WHEEL[i].label||"").trim(); if(lab.length>12) lab=lab.slice(0,11)+"…";
     const flip = (mid>90 && mid<270);
-    const lab = (WHEEL[i].label||"").length>13 ? WHEEL[i].label.slice(0,12)+"…" : (WHEEL[i].label||"");
-    labels += `<g transform="rotate(${mid} 100 100)"><text x="100" y="${flip?'70':'34'}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="8.6" font-weight="800" font-family="Inter,sans-serif" ${flip?'transform="rotate(180 100 70)"':''} style="paint-order:stroke;stroke:rgba(0,0,0,.18);stroke-width:.6px">${lab.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</text></g>`;
+    const cy=42, h=15, w=Math.max(26, lab.length*4.7+11), bx=100-w/2, by=cy-h/2;
+    const safe=lab.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    badges += `<g transform="rotate(${mid} 100 100)"><g ${flip?`transform="rotate(180 100 ${cy})"`:''}>`
+      + `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${w.toFixed(1)}" height="${h}" rx="7.5" fill="#181818" opacity="0.82"/>`
+      + `<text x="100" y="${(cy+0.6).toFixed(1)}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="8.4" font-weight="800" font-family="Inter,sans-serif">${safe}</text>`
+      + `</g></g>`;
   }
-  return `<svg id="wheel" viewBox="0 0 200 200"><circle cx="100" cy="100" r="99.5" fill="none" stroke="rgba(0,0,0,.08)" stroke-width="1"/>${paths}${labels}</svg>`;
+  return `<svg id="wheel" viewBox="0 0 200 200"><circle cx="100" cy="100" r="99.3" fill="none" stroke="rgba(0,0,0,.06)" stroke-width="1.2"/>${paths}${badges}</svg>`;
 }
 
 function screenWheel(reason){
@@ -254,7 +277,7 @@ async function finishSpin(reason, prize){
   }catch(e){}
 
   if (prize.kind==="none"){
-    st.innerHTML = `<div class="pop"><div style="font-size:42px">😅</div><div style="font-weight:800;font-size:18px">${prize.label}</div><p class="muted">Pas de chance cette fois !</p><button class="btn tap alt" style="margin-top:10px" onclick="screenCard(CURRENT)">Retour à ma carte</button></div>`;
+    st.innerHTML = `<div class="pop"><div style="font-size:42px">😅</div><div style="font-weight:800;font-size:18px">${prize.label}</div><p class="muted">Pas de chance cette fois !</p>${backCardBtn}</div>`;
     return;
   }
   if (prize.kind==="replay"){
@@ -270,11 +293,36 @@ async function finishSpin(reason, prize){
     <div class="muted" style="font-weight:600">Montre ce code en caisse :</div>
     <div class="codebig tap" style="margin:8px auto 0" onclick="copyCode('${code.code}')">${code.code} <span style="font-size:16px">📋</span></div>
     <p class="muted" style="margin-top:10px;font-size:12px">Code à usage unique. Prends-le en photo pour ne pas l'oublier !</p>
-    <button class="btn tap alt" style="margin-top:12px" onclick="screenCard(CURRENT)">Retour à ma carte</button>
+    <button class="btn tap backcard" onclick="screenCard(CURRENT)">${CARD_SVG} Revenir à ma carte</button>
   </div>`;
 }
 
 function copyCode(c){ try{ navigator.clipboard.writeText(c); }catch(e){} }
+
+/* ---------- Ajouter à l'écran d'accueil ---------- */
+let deferredPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredPrompt = e; });
+try {
+  const mani = { name: "Crémà Fidélité", short_name: "Crémà", start_url: ".", display: "standalone", background_color: "#FFF4D8", theme_color: "#F05C8A", icons: [] };
+  const blob = new Blob([JSON.stringify(mani)], { type: "application/manifest+json" });
+  const l = document.createElement("link"); l.rel = "manifest"; l.href = URL.createObjectURL(blob); document.head.appendChild(l);
+} catch (e) {}
+async function addToHome(){
+  if (deferredPrompt){ deferredPrompt.prompt(); try{ await deferredPrompt.userChoice; }catch(e){} deferredPrompt = null; return; }
+  const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const ov = document.createElement("div");
+  ov.style.cssText = "position:fixed;inset:0;background:rgba(24,24,24,.5);display:flex;align-items:center;justify-content:center;padding:18px;z-index:100";
+  ov.innerHTML = `<div class="card" style="max-width:360px">
+    <div style="font-weight:900;font-size:18px;margin-bottom:10px">📲 Ajouter Crémà à l'écran d'accueil</div>
+    ${iOS
+      ? `<p class="muted" style="line-height:1.6">1️⃣ Appuie sur le bouton <b>Partager</b> <span style="display:inline-block;border:1px solid var(--line);border-radius:6px;padding:0 5px">⬆️</span> en bas de Safari.<br>2️⃣ Choisis <b>« Sur l'écran d'accueil »</b>.<br>3️⃣ Valide ✅</p>`
+      : `<p class="muted" style="line-height:1.6">Ouvre le menu <b>⋮</b> de ton navigateur, puis <b>« Ajouter à l'écran d'accueil »</b>.</p>`}
+    <button class="btn tap" style="margin-top:14px">J'ai compris</button>
+  </div>`;
+  ov.querySelector("button").onclick = () => ov.remove();
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
 
 /* ---------- démarrage ---------- */
 (async ()=>{
